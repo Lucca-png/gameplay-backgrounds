@@ -15,65 +15,72 @@ jobs:
         with:
           token: ${{ secrets.GH_TOKEN }}
 
-      - name: Install yt-dlp and ffmpeg
+      - name: Install yt-dlp, ffmpeg and deno
         run: |
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg unzip
           pip install yt-dlp
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
       - name: Download gameplay videos
         run: |
           mkdir -p videos
 
-          # Lista de playlists/buscas de gameplay sem copyright
           QUERIES=(
-            "ytsearch3:minecraft parkour gameplay no copyright vertical"
-            "ytsearch3:subway surfers gameplay no copyright"
-            "ytsearch3:satisfying gameplay no copyright short"
-            "ytsearch3:temple run gameplay no copyright vertical"
-            "ytsearch3:geometry dash gameplay no copyright"
-            "ytsearch3:cluster rush gameplay no copyright"
+            "ytsearch5:minecraft parkour short vertical no copyright free use"
+            "ytsearch5:subway surfers short clip no copyright"
+            "ytsearch5:temple run short gameplay no copyright"
+            "ytsearch5:geometry dash short no copyright"
+            "ytsearch5:mobile game parkour short no copyright"
           )
 
           for QUERY in "${QUERIES[@]}"; do
             yt-dlp \
               --no-playlist \
-              --max-downloads 1 \
-              --match-filter "duration < 300" \
+              --max-downloads 2 \
+              --match-filter "duration > 20 & duration < 600" \
               --format "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
               --merge-output-format mp4 \
-              --output "videos/%(title)s.%(ext)s" \
+              --output "videos/%(id)s.%(ext)s" \
               --no-overwrites \
               --ignore-errors \
+              --js-runtimes deno \
               "$QUERY" || true
           done
 
-      - name: Limit to 20 videos max (remove oldest)
+          echo "Videos downloaded:"
+          ls -la videos/ || echo "No videos"
+
+      - name: Limit to 20 videos max
         run: |
-          cd videos
-          COUNT=$(ls -1 *.mp4 2>/dev/null | wc -l)
-          if [ "$COUNT" -gt 20 ]; then
-            ls -t *.mp4 | tail -n +21 | xargs rm -f
-            echo "Removed old videos, kept 20 most recent"
+          if [ -d videos ]; then
+            cd videos
+            COUNT=$(ls -1 *.mp4 2>/dev/null | wc -l)
+            echo "Total videos: $COUNT"
+            if [ "$COUNT" -gt 20 ]; then
+              ls -t *.mp4 | tail -n +21 | xargs rm -f
+            fi
           fi
 
       - name: Generate video index JSON
         run: |
-          cd videos
-          echo "[" > ../index.json
+          mkdir -p videos
+          echo "[" > index.json
           FIRST=true
-          for f in *.mp4; do
+          for f in videos/*.mp4; do
             [ -f "$f" ] || continue
-            URL="https://raw.githubusercontent.com/Lucca-png/gameplay-backgrounds/main/videos/$(python3 -c "import urllib.parse; print(urllib.parse.quote('$f'))")"
+            FILENAME=$(basename "$f")
+            ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$FILENAME'))")
+            URL="https://raw.githubusercontent.com/Lucca-png/gameplay-backgrounds/main/videos/${ENCODED}"
             if [ "$FIRST" = true ]; then
               FIRST=false
             else
-              echo "," >> ../index.json
+              echo "," >> index.json
             fi
-            echo "  {\"file\": \"$f\", \"url\": \"$URL\"}" >> ../index.json
+            echo "  {\"file\": \"$FILENAME\", \"url\": \"$URL\"}" >> index.json
           done
-          echo "]" >> ../index.json
-          echo "Index generated:"
-          cat ../index.json
+          echo "]" >> index.json
+          cat index.json
 
       - name: Commit and push
         run: |
@@ -81,4 +88,4 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add videos/ index.json
           git diff --staged --quiet || git commit -m "chore: update gameplay videos $(date +'%Y-%m-%d')"
-          git push
+          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Lucca-png/gameplay-backgrounds.git
