@@ -1,0 +1,84 @@
+name: Download Gameplay Videos
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Todo dia às 3h UTC
+  workflow_dispatch:       # Permite rodar manualmente também
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Install yt-dlp and ffmpeg
+        run: |
+          sudo apt-get install -y ffmpeg
+          pip install yt-dlp
+
+      - name: Download gameplay videos
+        run: |
+          mkdir -p videos
+
+          # Lista de playlists/buscas de gameplay sem copyright
+          QUERIES=(
+            "ytsearch3:minecraft parkour gameplay no copyright vertical"
+            "ytsearch3:subway surfers gameplay no copyright"
+            "ytsearch3:satisfying gameplay no copyright short"
+            "ytsearch3:temple run gameplay no copyright vertical"
+            "ytsearch3:geometry dash gameplay no copyright"
+            "ytsearch3:cluster rush gameplay no copyright"
+          )
+
+          for QUERY in "${QUERIES[@]}"; do
+            yt-dlp \
+              --no-playlist \
+              --max-downloads 1 \
+              --match-filter "duration < 300" \
+              --format "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+              --merge-output-format mp4 \
+              --output "videos/%(title)s.%(ext)s" \
+              --no-overwrites \
+              --ignore-errors \
+              "$QUERY" || true
+          done
+
+      - name: Limit to 20 videos max (remove oldest)
+        run: |
+          cd videos
+          COUNT=$(ls -1 *.mp4 2>/dev/null | wc -l)
+          if [ "$COUNT" -gt 20 ]; then
+            ls -t *.mp4 | tail -n +21 | xargs rm -f
+            echo "Removed old videos, kept 20 most recent"
+          fi
+
+      - name: Generate video index JSON
+        run: |
+          cd videos
+          echo "[" > ../index.json
+          FIRST=true
+          for f in *.mp4; do
+            [ -f "$f" ] || continue
+            URL="https://raw.githubusercontent.com/Lucca-png/gameplay-backgrounds/main/videos/$(python3 -c "import urllib.parse; print(urllib.parse.quote('$f'))")"
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              echo "," >> ../index.json
+            fi
+            echo "  {\"file\": \"$f\", \"url\": \"$URL\"}" >> ../index.json
+          done
+          echo "]" >> ../index.json
+          echo "Index generated:"
+          cat ../index.json
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add videos/ index.json
+          git diff --staged --quiet || git commit -m "chore: update gameplay videos $(date +'%Y-%m-%d')"
+          git push
