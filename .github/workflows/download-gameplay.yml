@@ -2,8 +2,8 @@ name: Download Gameplay Videos
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Todo dia às 3h UTC
-  workflow_dispatch:       # Permite rodar manualmente também
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 jobs:
   download:
@@ -56,31 +56,36 @@ jobs:
           if [ -d videos ]; then
             cd videos
             COUNT=$(ls -1 *.mp4 2>/dev/null | wc -l)
-            echo "Total videos: $COUNT"
+            echo "Total: $COUNT videos"
             if [ "$COUNT" -gt 20 ]; then
               ls -t *.mp4 | tail -n +21 | xargs rm -f
+              echo "Removed extras, kept 20"
             fi
           fi
 
       - name: Generate video index JSON
         run: |
-          mkdir -p videos
-          echo "[" > index.json
-          FIRST=true
-          for f in videos/*.mp4; do
-            [ -f "$f" ] || continue
-            FILENAME=$(basename "$f")
-            ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$FILENAME'))")
-            URL="https://raw.githubusercontent.com/Lucca-png/gameplay-backgrounds/main/videos/${ENCODED}"
-            if [ "$FIRST" = true ]; then
-              FIRST=false
-            else
-              echo "," >> index.json
-            fi
-            echo "  {\"file\": \"$FILENAME\", \"url\": \"$URL\"}" >> index.json
-          done
-          echo "]" >> index.json
-          cat index.json
+          python3 - << 'PYEOF'
+import os, json, urllib.parse
+
+videos_dir = 'videos'
+base_url = 'https://raw.githubusercontent.com/Lucca-png/gameplay-backgrounds/main/videos/'
+
+videos = []
+if os.path.isdir(videos_dir):
+    for f in sorted(os.listdir(videos_dir)):
+        if f.endswith('.mp4'):
+            url = base_url + urllib.parse.quote(f)
+            videos.append({'file': f, 'url': url})
+
+result = {'videos': videos, 'count': len(videos)}
+
+with open('index.json', 'w') as out:
+    json.dump(result, out, indent=2)
+
+print(f'Index gerado com {len(videos)} videos')
+print(json.dumps(result, indent=2))
+PYEOF
 
       - name: Commit and push
         run: |
