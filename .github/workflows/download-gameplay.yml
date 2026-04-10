@@ -25,7 +25,6 @@ jobs:
       - name: Download gameplay videos
         run: |
           mkdir -p videos
-
           QUERIES=(
             "ytsearch5:minecraft parkour short vertical no copyright free use"
             "ytsearch5:subway surfers short clip no copyright"
@@ -33,7 +32,6 @@ jobs:
             "ytsearch5:geometry dash short no copyright"
             "ytsearch5:mobile game parkour short no copyright"
           )
-
           for QUERY in "${QUERIES[@]}"; do
             yt-dlp \
               --no-playlist \
@@ -47,7 +45,6 @@ jobs:
               --js-runtimes deno \
               "$QUERY" || true
           done
-
           echo "Videos downloaded:"
           ls -la videos/ || echo "No videos"
 
@@ -59,33 +56,12 @@ jobs:
             echo "Total: $COUNT videos"
             if [ "$COUNT" -gt 20 ]; then
               ls -t *.mp4 | tail -n +21 | xargs rm -f
-              echo "Removed extras, kept 20"
             fi
           fi
 
       - name: Generate video index JSON
         run: |
-          python3 - << 'PYEOF'
-import os, json, urllib.parse
-
-videos_dir = 'videos'
-base_url = 'https://raw.githubusercontent.com/Lucca-png/gameplay-backgrounds/main/videos/'
-
-videos = []
-if os.path.isdir(videos_dir):
-    for f in sorted(os.listdir(videos_dir)):
-        if f.endswith('.mp4'):
-            url = base_url + urllib.parse.quote(f)
-            videos.append({'file': f, 'url': url})
-
-result = {'videos': videos, 'count': len(videos)}
-
-with open('index.json', 'w') as out:
-    json.dump(result, out, indent=2)
-
-print(f'Index gerado com {len(videos)} videos')
-print(json.dumps(result, indent=2))
-PYEOF
+          python3 generate_index.py
 
       - name: Commit and push
         run: |
